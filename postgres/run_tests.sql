@@ -18,6 +18,19 @@ begin
 end;
 $$ language plpgsql;
 
+CREATE OR REPLACE FUNCTION test_assertEquals_golden_master(expected TEXT, result TEXT) RETURNS void as $$
+DECLARE
+    golden text;
+begin
+  if expected = result then
+    null;
+  else
+    golden := CONCAT('expected := put_line(expected, ''', REPLACE(result, E'\n', E''');\nexpected := put_line(expected, '''), ''');');
+    raise exception E'assertEquals failure: expect \n%\n\n instead of \n%\n\nFor update, copy:\n%', expected, result, golden using errcode = 'triggered_action_exception';
+  end if;
+end;
+$$ language plpgsql;
+
 CREATE OR REPLACE FUNCTION test_case_update_quality() RETURNS void AS $$
 DECLARE
   sell_in_result item.sell_in%TYPE;
@@ -36,7 +49,10 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION put_line(buffer text, line text) RETURNS text AS $$
 BEGIN
-    RETURN CONCAT(buffer, E'\n', line);
+    IF buffer IS NULL
+    THEN RETURN line;
+    ELSE RETURN CONCAT(buffer, E'\n', line);
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -47,6 +63,7 @@ DECLARE
   days integer;
   result text;
   expected text;
+  item_result RECORD;
 BEGIN
   -- given
   TRUNCATE TABLE item;
@@ -60,7 +77,7 @@ BEGIN
   CALL new_item('Backstage passes to a TAFKAL80ETC concert', 5, 49);
   -- this conjured item does not work properly yet ;
   CALL new_item('Conjured Mana Cake', 3, 6);
-  days := 2;
+  days := 10;               
 
   -- when
   FOR current_day IN 1 .. days
@@ -68,99 +85,127 @@ BEGIN
     result := put_line(result, CONCAT('-------- day ', current_day, ' --------'));
     result := put_line(result, 'name, sellIn, quality');
 
-    -- FOR l_item IN c_items
-    -- LOOP
-    -- put_line(v_result, l_item.name || ', ' || l_item.sell_in || ', ' || l_item.quality);
-    -- END LOOP;
+    CALL update_quality();
 
-    -- CALL update_quality();
+    FOR item_result IN (SELECT name, sell_in, quality FROM item ORDER BY name ASC, sell_in ASC, quality ASC) 
+    LOOP
+      result := put_line(result, format('%s, %s, %s', item_result.name, item_result.sell_in, item_result.quality));
+    END LOOP;
   END LOOP;
 
-  perform test_assertEquals_text('invalid text', expected, result);
-
-  SELECT quality, sell_in FROM item INTO quality_result, sell_in_result;
-  perform test_assertEquals_numeric('Quality should increase', 7, quality_result);
-  perform test_assertEquals_numeric('Sell in should decrease', 3, sell_in_result);
+  -- then
+  expected := put_line(expected, '-------- day 1 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 9, 19');                                                   
+  expected := put_line(expected, 'Aged Brie, 1, 1');                                                            
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 4, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 9, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 14, 21');                          
+  expected := put_line(expected, 'Conjured Mana Cake, 2, 5');                                                   
+  expected := put_line(expected, 'Elixir of the Mongoose, 4, 6');                                               
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                          
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 2 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 8, 18');                                                   
+  expected := put_line(expected, 'Aged Brie, 0, 2');                                                            
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 3, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 8, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 13, 22');                          
+  expected := put_line(expected, 'Conjured Mana Cake, 1, 4');                                                   
+  expected := put_line(expected, 'Elixir of the Mongoose, 3, 5');                                               
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 3 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 7, 17');                                                   
+  expected := put_line(expected, 'Aged Brie, -1, 4');                                                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 2, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 7, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 12, 23');                           
+  expected := put_line(expected, 'Conjured Mana Cake, 0, 3');                                                   
+  expected := put_line(expected, 'Elixir of the Mongoose, 2, 4');                                               
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 4 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 6, 16');                                                   
+  expected := put_line(expected, 'Aged Brie, -2, 6');                                                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 1, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 6, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 11, 24');                          
+  expected := put_line(expected, 'Conjured Mana Cake, -1, 1');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, 1, 3');                                               
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 5 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 5, 15');                                                   
+  expected := put_line(expected, 'Aged Brie, -3, 8');                                                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 0, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 5, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 10, 25');                          
+  expected := put_line(expected, 'Conjured Mana Cake, -2, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, 0, 2');                                               
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 6 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 4, 14');                                                   
+  expected := put_line(expected, 'Aged Brie, -4, 10');                                                          
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, -1, 0');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 4, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 9, 27');                           
+  expected := put_line(expected, 'Conjured Mana Cake, -3, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, -1, 0');                                              
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 7 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 3, 13');                                                   
+  expected := put_line(expected, 'Aged Brie, -5, 12');                                                          
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, -2, 0');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 3, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 8, 29');                           
+  expected := put_line(expected, 'Conjured Mana Cake, -4, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, -2, 0');                                              
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 8 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 2, 12');                                                   
+  expected := put_line(expected, 'Aged Brie, -6, 14');                                                          
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, -3, 0');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 2, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 7, 31');                           
+  expected := put_line(expected, 'Conjured Mana Cake, -5, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, -3, 0');                                              
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 9 --------');                                                    
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 1, 11');                                                   
+  expected := put_line(expected, 'Aged Brie, -7, 16');                                                          
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, -4, 0');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 1, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 6, 33');                           
+  expected := put_line(expected, 'Conjured Mana Cake, -6, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, -4, 0');                                              
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');                                          
+  expected := put_line(expected, '-------- day 10 --------');                                                   
+  expected := put_line(expected, 'name, sellIn, quality');                                                      
+  expected := put_line(expected, '+5 Dexterity Vest, 0, 10');                                                   
+  expected := put_line(expected, 'Aged Brie, -8, 18');                                                          
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, -5, 0');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 0, 50');                           
+  expected := put_line(expected, 'Backstage passes to a TAFKAL80ETC concert, 5, 35');                           
+  expected := put_line(expected, 'Conjured Mana Cake, -7, 0');                                                  
+  expected := put_line(expected, 'Elixir of the Mongoose, -5, 0');                                              
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, -1, 80');                                         
+  expected := put_line(expected, 'Sulfuras, Hand of Ragnaros, 0, 80');   
+  perform test_assertEquals_golden_master(expected, result);
 END;
 $$ LANGUAGE plpgsql;
 
 select * from test_run_all();
-
--- CREATE OR REPLACE PACKAGE BODY texttest IS
---    co_lf   CONSTANT VARCHAR2(1) := CHR(10);
-
---    PROCEDURE put_line(p_buffer IN OUT NOCOPY VARCHAR2, p_line VARCHAR2) IS
---    BEGIN
---       p_buffer := p_buffer || p_line || co_lf;
---    END put_line;
-
---    PROCEDURE setup IS
---    BEGIN
---       DELETE FROM ITEM;
-
---       new_item('+5 Dexterity Vest', 10, 20);
---       new_item('Aged Brie', 2, 0);
---       new_item('Elixir of the Mongoose', 5, 7);
---       new_item('Sulfuras, Hand of Ragnaros', 0, 80);
---       new_item('Sulfuras, Hand of Ragnaros', -1, 80);
---       new_item('Backstage passes to a TAFKAL80ETC concert', 15, 20);
---       new_item('Backstage passes to a TAFKAL80ETC concert', 10, 49);
---       new_item('Backstage passes to a TAFKAL80ETC concert', 5, 49);
---       -- this conjured item does not work properly yet ;
---       new_item('Conjured Mana Cake', 3, 6);
---    END setup;
-
---    PROCEDURE main_test IS
---       v_result     VARCHAR2(4000) := '';
-
---       v_expected   VARCHAR2(4000) := '';
-
---       l_days       NUMBER(3);
-
---       CURSOR c_items IS SELECT name, sell_in, quality FROM item;
-
---       l_item       c_items%ROWTYPE;
---    BEGIN
---       put_line(v_expected, 'OMGHAI!');
---       put_line(v_expected, '-------- day 0 --------');
---       put_line(v_expected, 'name, sellIn, quality');
---       put_line(v_expected, '+5 Dexterity Vest, 10, 20' || co_lf || 'Aged Brie, 2, 0');
---       put_line(v_expected, 'Elixir of the Mongoose, 5, 7');
---       put_line(v_expected, 'Sulfuras, Hand of Ragnaros, 0, 80');
---       put_line(v_expected, 'Sulfuras, Hand of Ragnaros, -1, 80');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 15, 20');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 10, 49');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 5, 49');
---       put_line(v_expected, 'Conjured Mana Cake, 3, 6');
---       put_line(v_expected, '-------- day 1 --------');
---       put_line(v_expected, 'name, sellIn, quality');
---       put_line(v_expected, '+5 Dexterity Vest, 9, 19');
---       put_line(v_expected, 'Aged Brie, 1, 1');
---       put_line(v_expected, 'Elixir of the Mongoose, 4, 6');
---       put_line(v_expected, 'Sulfuras, Hand of Ragnaros, 0, 80');
---       put_line(v_expected, 'Sulfuras, Hand of Ragnaros, -1, 80');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 14, 21');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 9, 50');
---       put_line(v_expected, 'Backstage passes to a TAFKAL80ETC concert, 4, 50');
---       put_line(v_expected, 'Conjured Mana Cake, 2, 5');
-
---       put_line(v_result, 'OMGHAI!');
---       l_days := 2;
-
---       FOR i IN 0 .. l_days - 1
---       LOOP
---          put_line(v_result, '-------- day ' || TO_CHAR(i) || ' --------');
---          put_line(v_result, 'name, sellIn, quality');
-
---          FOR l_item IN c_items
---          LOOP
---             put_line(v_result, l_item.name || ', ' || l_item.sell_in || ', ' || l_item.quality);
---          END LOOP;
-
---          update_quality();
---       END LOOP;
-
---       ut.expect(v_result).to_equal(v_expected);
---    END;
--- END texttest;
--- /
