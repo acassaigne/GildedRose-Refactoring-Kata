@@ -3,7 +3,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   c_items CURSOR FOR
-    SELECT name, sell_in, quality FROM item; -- FIXME: FOR UPDATE;
+    SELECT name, sell_in, quality FROM item;
   l_item RECORD;
   l_name item.name%TYPE;
   l_sell_in item.sell_in%TYPE;
